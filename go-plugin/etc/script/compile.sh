@@ -7,12 +7,11 @@ go env -w GO111MODULE=on
 go env -w GOPROXY=https://goproxy.cn,direct
 go env -w GOPRIVATE=gitlab.alipay-inc.com,code.alipay.com
 
+# update mod
+go mod tidy
+
 export PLUGIN_PROJECT=${PROJECT_NAME}
 export SIDECAR_PROJECT=${SIDECAR_PROJECT_NAME}
-
-# update sidecar dependency.
-go mod tidy
-go mod download
 
 MAJOR_VERSION=$(cat VERSION)
 GIT_VERSION=$(git log -1 --pretty=format:%h)
@@ -40,10 +39,12 @@ go build -mod=readonly -gcflags "all=-N -l" \
   -ldflags "-B 0x$(head -c20 /dev/urandom | od -An -tx1 | tr -d ' \n') -X main.Version=${MAJOR_VERSION} -X main.GitVersion=${GIT_VERSION}" \
   -o mosn "${SIDECAR_PROJECT}/cmd/mosn/main"
 
-if [ -f mosn ]; then
+if [[ -f mosn ]]; then
   md5sum -b mosn | cut -d' ' -f1 >mosn-${MAJOR_VERSION}-${GIT_VERSION}.md5
   mv mosn-${MAJOR_VERSION}-${GIT_VERSION}.md5 "/go/src/${PLUGIN_PROJECT}/build/sidecar/binary/mosn-${MAJOR_VERSION}-${GIT_VERSION}.md5"
   mv mosn "/go/src/${PLUGIN_PROJECT}/build/sidecar/binary/mosn"
+  cp "/go/src/${SIDECAR_PROJECT}/go.mod" "/go/src/${PLUGIN_PROJECT}/build/sidecar/binary/local.mod"
+  chmod 644 /go/src/${PLUGIN_PROJECT}/build/sidecar/binary/*
     echo "compile success"
 else 
     echo "compile failed"

@@ -7,6 +7,9 @@ go env -w GO111MODULE=on
 go env -w GOPROXY=https://goproxy.cn,direct
 go env -w GOPRIVATE=gitlab.alipay-inc.com,code.alipay.com
 
+# update mod
+go mod tidy
+
 # build stream filter plugins
 if [[ -n "${PLUGIN_STREAM_FILTER}" ]]; then
   filters=(${PLUGIN_STREAM_FILTER//,/ })

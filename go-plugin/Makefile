@@ -1,6 +1,7 @@
 SHELL			= /bin/bash
 TARGET			= ${plugin}
 OUTPUT			= ${TARGET}.so
+ARM_TO_AMD		= ${arm.to.amd}
 
 STREAM_FILTER = ${filter}
 TRANSCODER = ${trans}
@@ -18,6 +19,8 @@ TRANSCODER_OUTPUT = ${TRANSCODER_PREFIX}-${OUTPUT}
 
 STEAM_FILTER_PREFIX = filter
 
+TRACE_PREFIX = trace
+
 GIT_VERSION 			= $(shell git log -1 --pretty=format:%H | head -c 8)
 PROJECT_NAME			= $(shell head -1 go.mod | cut  -d' ' -f2)
 FULL_PROJECT_NAME		= $(shell pwd)
@@ -26,8 +29,8 @@ FULL_PROJECT_NAME		= $(shell pwd)
 SIDECAR_GITLAB_PROJECT_NAME = gitlab.alipay-inc.com/ant-mesh/mosn
 
 SIDECAR_BUILD_IMAGE     = mosn-builder
-BUILD_IMAGE				= golang:1.17.9
-BASE_IMAGE				= zonghaishang/delve:v1.7.3
+BUILD_IMAGE				= golang:1.20.1
+BASE_IMAGE				= zonghaishang/delve:v1.20.1
 
 os_arch:=$(shell uname)_$(shell arch)
 
@@ -70,6 +73,15 @@ transcoder.amd64:
 transcoder.arm64:
 	GOOS=linux GOARCH=arm64 DOCKER_BUILD_OPTS="--platform=linux/arm64" make transcoder.arch
 
+trace:
+	make trace.arch
+
+trace.amd64:
+	GOOS=linux GOARCH=amd64 DOCKER_BUILD_OPTS="--platform=linux/amd64" make trace.arch
+
+trace.arm64:
+	GOOS=linux GOARCH=arm64 DOCKER_BUILD_OPTS="--platform=linux/arm64" make trace.arch
+
 ant:
 	make ant.arch
 
@@ -81,7 +93,11 @@ ant.arm64:
 
 pkg-codec:
 ifeq ("$(os_arch)","Darwin_arm64")
+ifeq ("$(ARM_TO_AMD)","off")
+	make pkg-codec.arm64
+else
 	make pkg-codec.amd64
+endif
 else ifeq ("$(os_arch)","Darwin_i386")
 	make pkg-codec.amd64
 else
@@ -96,7 +112,11 @@ pkg-codec.arm64:
 
 pkg-filter:
 ifeq ("$(os_arch)","Darwin_arm64")
+ifeq ("$(ARM_TO_AMD)","off")
+	make pkg-filter.arm64
+else
 	make pkg-filter.amd64
+endif
 else ifeq ("$(os_arch)","Darwin_i386")
 	make pkg-filter.amd64
 else
@@ -111,7 +131,11 @@ pkg-filter.arm64:
 
 pkg-trans:
 ifeq ("$(os_arch)","Darwin_arm64")
+ifeq ("$(ARM_TO_AMD)","off")
+	make pkg-trans.arm64
+else
 	make pkg-trans.amd64
+endif
 else ifeq ("$(os_arch)","Darwin_i386")
 	make pkg-trans.amd64
 else
@@ -123,6 +147,25 @@ pkg-trans.amd64:
 
 pkg-trans.arm64:
 	GOOS=linux GOARCH=arm64 DOCKER_BUILD_OPTS="--platform=linux/arm64" make pkg-trans.arch
+
+pkg-trace:
+ifeq ("$(os_arch)","Darwin_arm64")
+ifeq ("$(ARM_TO_AMD)","off")
+	make pkg-trace.arm64
+else
+	make pkg-trace.amd64
+endif
+else ifeq ("$(os_arch)","Darwin_i386")
+	make pkg-trace.amd64
+else
+	make pkg-trace.arch
+endif
+
+pkg-trace.amd64:
+	GOOS=linux GOARCH=amd64 DOCKER_BUILD_OPTS="--platform=linux/amd64" make pkg-trace.arch
+
+pkg-trace.arm64:
+	GOOS=linux GOARCH=arm64 DOCKER_BUILD_OPTS="--platform=linux/arm64" make pkg-trace.arch
 
 pkg-ant:
 	make pkg-ant.arch
@@ -141,7 +184,7 @@ start:
     endif
 
 start.amd64:
-	FULL_PROJECT_NAME=${FULL_PROJECT_NAME} PROJECT_NAME=${PROJECT_NAME} \
+	FULL_PROJECT_NAME=${FULL_PROJECT_NAME} PROJECT_NAME=${PROJECT_NAME}  DOCKER_BUILD_OPTS="--platform=linux/amd64" \
 	SIDECAR_GITLAB_PROJECT_NAME=${SIDECAR_GITLAB_PROJECT_NAME} bash ${FULL_PROJECT_NAME}/etc/ant/start.sh
 
 start.arm64:
@@ -155,7 +198,7 @@ stop:
 	bash ${FULL_PROJECT_NAME}/etc/ant/stop.sh
 
 clean:
-	@rm -rf build/codecs build/stream_filters build/transcoders build/target
+	@rm -rf build/codecs build/stream_filters build/transcoders build/traces build/target
 
 codec.arch:
 	mkdir -p /tmp/go-build-cache
@@ -207,6 +250,21 @@ transcoder.arch:
 	-w /go/src/${PROJECT_NAME} ${BUILD_IMAGE} \
 	bash /go/src/${PROJECT_NAME}/etc/script/compile-transcoder.sh
 
+trace.arch:
+	mkdir -p /tmp/go-build-cache
+	docker run --rm ${DOCKER_BUILD_OPTS} \
+	-e PLUGIN_TRACE=${TARGET} \
+	-e PLUGIN_TRACE_PREFIX=${TRACE_PREFIX} \
+	-e PLUGIN_PROJECT_NAME=${PROJECT_NAME} \
+	-e PLUGIN_OS=${PLUGIN_GOOS} \
+	-e PLUGIN_ARCH=${PLUGIN_GOARCH} \
+	-e PLUGIN_GIT_VERSION=${GIT_VERSION} \
+	 -v $(shell go env GOPATH)/pkg/mod/:/go/pkg/mod/ \
+	-v ${FULL_PROJECT_NAME}:/go/src/${PROJECT_NAME} \
+	-v /tmp/go-build-cache:/root/.cache/go-build \
+	-w /go/src/${PROJECT_NAME} ${BUILD_IMAGE} \
+	bash /go/src/${PROJECT_NAME}/etc/script/compile-trace.sh
+
 compile-codec:
 	@rm -rf build/codecs/${PLUGIN_TARGET}
 	GO111MODULE=on ${BUILD_OPTS} go build \
@@ -243,8 +301,24 @@ compile-transcoder:
 	cp configs/transcoders/${PLUGIN_TARGET}/*.json build/transcoders/${PLUGIN_TARGET}
 	@echo "compile transcoder ${PLUGIN_TARGET} complete"
 
+compile-trace:
+	@rm -rf build/traces/${PLUGIN_TARGET}
+	@rm -rf build/codecs/bundle/support/traces/${PLUGIN_TARGET}
+	GO111MODULE=on ${BUILD_OPTS} go build \
+		--buildmode=plugin -mod=mod \
+		-gcflags "all=-N -l" \
+		-o ${PLUGIN_TRACE_OUTPUT} ${PLUGIN_PROJECT_NAME}/plugins/traces/${PLUGIN_TARGET}/main
+	@mkdir -p build/traces/${PLUGIN_TARGET}
+	mkdir -p build/codecs/bundle/support/traces/${PLUGIN_TARGET}
+	@mv ${PLUGIN_TRACE_OUTPUT} build/traces/${PLUGIN_TARGET}
+	@cd build/traces/${PLUGIN_TARGET} && $(shell which md5sum) -b ${PLUGIN_TRACE_OUTPUT} | cut -d' ' -f1  > ${PLUGIN_TRACE_PREFIX}-${PLUGIN_TARGET}.md5
+	@cp configs/traces/${PLUGIN_TARGET}/*.json build/traces/${PLUGIN_TARGET}
+	cp -r build/traces/${PLUGIN_TARGET} build/codecs/bundle/support/traces/
+	@echo "compile trace ${PLUGIN_TARGET} complete"
+
 ant.arch:
 	bash ${FULL_PROJECT_NAME}/etc/ant/stop.sh
+	@test ! -f ~/.netrc  && touch ~/.netrc || true
 	docker run --rm ${DOCKER_BUILD_OPTS} \
 	-e PLUGIN_OS=${PLUGIN_GOOS} \
 	-e PLUGIN_ARCH=${PLUGIN_GOARCH} \
@@ -252,6 +326,7 @@ ant.arch:
 	-e SIDECAR_PROJECT_NAME=${SIDECAR_GITLAB_PROJECT_NAME} \
 	-v $(shell go env GOPATH)/pkg/mod/:/go/pkg/mod/ \
 	-v ${FULL_PROJECT_NAME}:/go/src/${PROJECT_NAME} \
+	-v ~/.netrc:/root/.netrc \
 	-v $(shell go env GOPATH)/src/${SIDECAR_GITLAB_PROJECT_NAME}:/go/src/${SIDECAR_GITLAB_PROJECT_NAME} \
 	-w /go/src/${SIDECAR_GITLAB_PROJECT_NAME} ${BUILD_IMAGE} \
 	bash /go/src/${PROJECT_NAME}/etc/script/compile.sh
@@ -309,6 +384,24 @@ pkg-trans.arch:
 	-w /go/src/${PROJECT_NAME} ${BASE_IMAGE} \
 	bash /go/src/${PROJECT_NAME}/etc/script/package-transcoder.sh
 	@echo "package transcoder ${TARGET} complete"
+
+pkg-trace.arch:
+	mkdir -p /tmp/go-build-cache
+	docker run --rm ${DOCKER_BUILD_OPTS} \
+	-e PLUGIN_TRACE=${TARGET} \
+	-e PLUGIN_TRACE_PREFIX=${TRACE_PREFIX} \
+	-e PLUGIN_PROJECT_NAME=${PROJECT_NAME} \
+	-e PLUGIN_OS=${PLUGIN_GOOS} \
+	-e PLUGIN_ARCH=${PLUGIN_GOARCH} \
+	-e PLUGIN_BUILD_PLATFORM=$(shell uname) \
+	-e PLUGIN_BUILD_PLATFORM_ARCH=$(shell arch) \
+	-e PLUGIN_GIT_VERSION=${GIT_VERSION} \
+	-v ${FULL_PROJECT_NAME}:/go/src/${PROJECT_NAME} \
+	-v /tmp/go-build-cache:/root/.cache/go-build \
+	-v $(shell go env GOPATH)/pkg/mod/:/go/pkg/mod/ \
+	-w /go/src/${PROJECT_NAME} ${BASE_IMAGE} \
+	bash /go/src/${PROJECT_NAME}/etc/script/package-trace.sh
+	@echo "package trace ${TARGET} complete"
 
 pkg-ant.arch:
 	docker run --rm ${DOCKER_BUILD_OPTS} \

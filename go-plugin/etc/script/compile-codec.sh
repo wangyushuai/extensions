@@ -7,6 +7,9 @@ go env -w GO111MODULE=on
 go env -w GOPROXY=https://goproxy.cn,direct
 go env -w GOPRIVATE=gitlab.alipay-inc.com,code.alipay.com
 
+# update mod
+go mod tidy
+
 build_opts=""
 if [[ -n ${PLUGIN_OS} && -n ${PLUGIN_ARCH} ]]; then
   build_opts="GOOS=${PLUGIN_OS} GOARCH=${PLUGIN_ARCH}"
