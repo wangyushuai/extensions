@@ -20,7 +20,6 @@ package fix
 import (
 	"context"
 	"fmt"
-	"sync/atomic"
 
 	"mosn.io/api"
 
@@ -48,7 +47,6 @@ func (proto FixProtocol) Encode(ctx context.Context, model interface{}) (api.IoB
 func (proto FixProtocol) Decode(ctx context.Context, data api.IoBuffer) (interface{}, error) {
 	if data.Len() >= LessLen {
 		flag := getStreamType(data.Bytes())
-
 		switch flag {
 		case CmdRequest, CmdRequestHeartbeat:
 			return decodeRequest(ctx, data)
@@ -107,34 +105,13 @@ func (proto FixProtocol) Hijack(ctx context.Context, request api.XFrame, statusC
 }
 
 func (proto FixProtocol) Mapping(httpStatusCode uint32) uint32 {
-	panic("实现: 根据http状态码转换成私有协议状态码")
-	// TODO: example http状态码转换成私有协议状态码
-	// switch httpStatusCode {
-	// case http.StatusOK:
-	// 	return ResponseStatusSuccess
-	// case api.RouterUnavailableCode:
-	// 	return ResponseStatusNoProcessor
-	// case api.NoHealthUpstreamCode:
-	// 	return ResponseStatusConnectionClosed
-	// case api.UpstreamOverFlowCode:
-	// 	return ResponseStatusServerThreadPoolBusy
-	// case api.CodecExceptionCode:
-	// 	//Decode or Encode Error
-	// 	return ResponseStatusCodecException
-	// case api.DeserialExceptionCode:
-	// 	//Hessian Exception
-	// 	return ResponseStatusServerDeserializeException
-	// case api.TimeoutExceptionCode:
-	// 	//Response Timeout
-	// 	return ResponseStatusTimeout
-	// default:
-	// 	return ResponseStatusUnknown
-	// }
+	log.DefaultLogger.Warnf("Try to parse mosn exception code: %d", httpStatusCode)
+	return httpStatusCode
 }
 
 // PoolMode returns whether ping-pong or multiplex
 func (proto FixProtocol) PoolMode() api.PoolMode {
-	return api.PingPong
+	return api.TCP
 }
 
 func (proto FixProtocol) EnableWorkerPool() bool {

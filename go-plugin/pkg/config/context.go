@@ -3,6 +3,7 @@ package config
 import (
 	"context"
 	"encoding/json"
+	"sync"
 
 	"mosn.io/api"
 )
@@ -33,6 +34,7 @@ const (
 	contextKeyUpStreamProtocol
 	contextKeyDownStreamHeaders
 	contextKeyDownStreamRespHeaders
+	contextKeySharedConnCtx
 	contextKeyEnd
 )
 
@@ -54,6 +56,37 @@ func GetSpan(ctx context.Context) (api.Span, bool) {
 		return nil, false
 	}
 	return span, ok
+}
+
+//
+//func GetProxyGeneralConfig(ctx context.Context) (map[string]interface{}, bool) {
+//	cfg, ok := ContextByContext(ctx)
+//	if !ok {
+//		return nil, false
+//	}
+//	info := cfg[contextKeyProxyGeneralConfig]
+//	if info == nil {
+//		return nil, false
+//	}
+//	if v, ok := info.(map[string]interface{}); ok {
+//		return v, ok
+//	}
+//	return nil, false
+//}
+
+func GetSharedConnCtx(ctx context.Context) (*sync.Map, bool) {
+	cfg, ok := ContextByContext(ctx)
+	if !ok || len(cfg) < contextKeySharedConnCtx {
+		return nil, false
+	}
+	info := cfg[contextKeySharedConnCtx]
+	if info == nil {
+		return nil, false
+	}
+	if v, ok := info.(*sync.Map); ok {
+		return v, ok
+	}
+	return nil, false
 }
 
 func GetListenerType(ctx context.Context) (string, bool) {

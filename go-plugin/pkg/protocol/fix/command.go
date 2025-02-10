@@ -18,8 +18,8 @@
 package fix
 
 import (
-	"mosn.io/extensions/go-plugin/pkg/common"
 	"mosn.io/api"
+	"mosn.io/extensions/go-plugin/pkg/common"
 )
 
 // ProtocolHeader is the header part of bolt v1 request
@@ -69,7 +69,7 @@ func (r *Request) GetRequestId() uint64 {
 }
 
 func (r *Request) SetRequestId(id uint64) {
-	
+
 }
 
 func (r *Request) IsHeartbeatFrame() bool {
@@ -86,6 +86,8 @@ func (r *Request) GetStreamType() api.StreamType {
 		return api.Request
 	case CmdResponse, CmdResponseHeartbeat:
 		return api.Response
+	case CmdRequestOneway:
+		return api.RequestOneWay
 	default:
 		return api.Request
 	}
@@ -131,7 +133,7 @@ func (r *Response) GetRequestId() uint64 {
 }
 
 func (r *Response) SetRequestId(id uint64) {
-	
+
 }
 
 func (r *Response) IsHeartbeatFrame() bool {

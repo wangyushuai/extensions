@@ -1,7 +1,7 @@
 #!/bin/bash
 
-export SERVICE_ID="fix-provider@fix" # please change fix-provider to your service identity
-export BACKEND_PORT=7755            # please change port 7755 to your java server port
+export SERVICE_ID="cmbc_stream_server@fix" # please change fix-provider to your service identity
+export BACKEND_PORT=9090            # please change port 7755 to your java server port
 export PROVIDER_APP=fix-provider
 
 export MOCK_PUB_DATA="{\"protocolType\": \"fix\", \"providerMetaInfo\": { \"appName\": \"${PROVIDER_APP}\",\"properties\": {\"application\": \"${PROVIDER_APP}\",\"port\": \"${BACKEND_PORT}\" }},	\"serviceName\": \"${SERVICE_ID}\"}"

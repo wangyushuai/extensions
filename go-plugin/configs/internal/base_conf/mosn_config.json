@@ -4,7 +4,7 @@
     {
       "mosn_server_name": "mosn",
       "default_log_path": "./logs/mosn/default.log",
-      "default_log_level": "INFO",
+      "default_log_level": "DEBUG",
       "graceful_timeout": "30s",
       "processor": 4,
       "listeners": []

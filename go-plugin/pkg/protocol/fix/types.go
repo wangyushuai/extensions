@@ -20,6 +20,8 @@ package fix
 import (
 	"bytes"
 	"errors"
+	"strings"
+
 	"mosn.io/api"
 	"mosn.io/pkg/buffer"
 )
@@ -31,6 +33,14 @@ const (
 	CmdResponse          byte             = 2
 	CmdRequestHeartbeat  byte             = 3
 	CmdResponseHeartbeat byte             = 4
+	CmdRequestOneway     byte             = 5
+
+	ProtocolMagic    = "R"
+	StreamTypeHealth = "H"
+	StreamTypeR      = "R"
+	RequestACKFlag   = "0000"
+
+	ServiceNameKey = "service_unit"
 
 	ResponseStatusSuccess                    uint32 = 0  // 0x00 response status
 	ResponseStatusError                      uint32 = 1  // 0x01
@@ -118,29 +128,20 @@ func getEncodeHeaderLength(h *ProtocolHeader) uint32 {
 }
 
 func getMinimumRequestLength() int {
-	panic("实现: 请求协议头部最小长度，用于读取最小协议头部可以继续解码")
-
-	// TODO: 删除panic以及以下注释，实现getMinimumRequestLength方法:
-	// 假设协议头部最小长度16，即可从中计算出完整协议长度
-	// return 16
+	return 4
 }
 
 func getMinimumResponseLength() int {
-	panic("实现: 响应协议头部最小长度，用于读取最小协议头部可以继续解码")
-
-	// TODO: 删除panic以及以下注释，实现getMinimumResponseLength方法:
-	// 假设协议头部最小长度16，即可从中计算出完整协议长度
-	// return 16
+	return 8
 }
 
 func getStreamType(bytes []byte) byte {
-	panic("实现: 根据报文bytes返回请求类型")
-
-	// TODO: 删除panic以及以下注释，实现getStreamType方法:
-	// 如果是请求: 返回 CmdRequest
-	// 如果是响应: 返回 CmdResponse
-	// 如果是心跳请求: 返回 CmdRequestHeartbeat
-	// 如果是心跳响应: 返回 CmdResponseHeartbeat
-	// 如果不支持心跳，根据bytes返回CmdRequest或者CmdResponse
-	// 假设私有协议根据第3位值data.Bytes()[2]可以识别请求类型，返回对应上述值即可
+	flag := string(bytes[0])
+	if strings.EqualFold(flag, StreamTypeHealth) {
+		return CmdRequestHeartbeat
+	} else if strings.EqualFold(flag, StreamTypeR) || (len(bytes) == 4 && strings.EqualFold(string(bytes[0:4]), RequestACKFlag)) {
+		return CmdRequest
+	} else {
+		return CmdResponse
+	}
 }

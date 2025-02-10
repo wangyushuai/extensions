@@ -3,7 +3,7 @@
   "type": "egress",
   "address": "0.0.0.0:19080",
   "bind_port": true,
-  "use_original_dst": "redirect",
+  "use_original_dst": true,
   "access_logs": [
     {
       "log_path": "./logs/mosn/egress.log"

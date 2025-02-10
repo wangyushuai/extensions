@@ -19,8 +19,13 @@ package fix
 
 import (
 	"context"
+	"fmt"
+	"strconv"
+	"strings"
+
 	"mosn.io/api"
 	"mosn.io/pkg/buffer"
+	"mosn.io/pkg/log"
 )
 
 func decodeRequest(ctx context.Context, data api.IoBuffer) (cmd interface{}, err error) {
@@ -32,78 +37,52 @@ func decodeRequest(ctx context.Context, data api.IoBuffer) (cmd interface{}, err
 		return
 	}
 
-	var (
-		headerLen  uint16
-		contentLen uint16
-	)
+	var frameLen int
+	var headerLen uint16
+	var contentLen uint16
+	var isRequestAck bool
 
-	// 2. 获取协议key-value的长度，以及报文体长度
-	panic("实现: 给headerLen和contentLen字段赋值, headerLen代表键值对编码长度，contentLen代表报文体长度")
-	// TODO: 删除panic以及以下注释，给headerLen和contentLen字段赋值:
-	// example 如何读取协议头部字段信息:
-	// 假设从索引12:14代表协议头部key-value编码后的长度,
-	// 从索引14:16读取协议体的长度
-	// headerLen = binary.BigEndian.Uint16(bytes[12:14])
-	// contentLen = binary.BigEndian.Uint16(bytes[14:16])
-
-	frameLen := RequestHeaderLen + int(headerLen) + int(contentLen)
-	if bytesLen < frameLen {
-		return
+	if bytesLen == 4 && strings.EqualFold(string(bytes[0:4]), RequestACKFlag) {
+		frameLen = 4
+		isRequestAck = true
+	} else {
+		//TODO:  判断报文是否完整, 流式首次请求可能会超过 128位，易导致请求没有请求完整就被发出
+		//frameLen = RequestHeaderLen + int(headerLen) + int(contentLen)
+		frameLen = bytesLen
+		if bytesLen < frameLen {
+			log.DefaultLogger.Infof("[fix] continue read req:%d", bytesLen)
+			return
+		}
 	}
-	// 非常重要: 丢弃tcp连接解码后的数据，防止内核重复推送重复数据
+	log.DefaultLogger.Infof("[fix] recevie req:%s", string(bytes))
 	data.Drain(frameLen)
 
 	request := &Request{}
-
 	request.ProtocolHeader = ProtocolHeader{
 		Flag:       getStreamType(bytes),
 		HeaderLen:  headerLen,
 		ContentLen: contentLen,
-		// TODO: 为RequestId和其他自定义字段赋值
 	}
-
-	panic("实现: 给Timeout字段赋值")
-	// TODO: 删除panic以及以下注释，给Timeout字段赋值:
-	// example 如何读取协议头部字段信息:
-	// 假设从索引8:12代表协议头部读取超时值，协议不携带超时，可以赋值默认超时，比如10秒
-	// request.Timeout = binary.BigEndian.Uint32(bytes[8:12])
-
 	request.Data = buffer.GetIoBuffer(frameLen)
-
 	//3. 完整报文复制到Data字段中
 	request.Data.Write(bytes[:frameLen])
 	request.rawData = request.Data.Bytes()
 
-	//5. process wrappers: Header, Content, Data
-	var (
-		headerIndex     int
-		headerEndIndex  int
-		contentIndex    int
-		contentEndIndex int
-	)
+	//oriRemoteAddr := mosnctx.Get(ctx, types.ContextOriRemoteAddr)
+	// Mock ServiceName
+	request.Set(ServiceNameKey, "cmbc_stream_server")
+	//ctx = context.WithValue(ctx, ServiceNameKey, "cmbc_stream_server")
+	//variable.SetString(ctx, types.VarDirection, "100.88.140.206:9090")
 
-	panic("实现: 给headerIndex和headerEndIndex赋值，headerIndex代表键值对开始下标，headerEndIndex代表键值对结束下标")
-	// TODO: 删除panic以及以下注释，给headerIndex和contentIndex赋值:
-	// example 假设RequestHeaderLen刚好是协议头部键值对的下标:
-	// headerIndex = RequestHeaderLen
-	// contentIndex 可以用headerIndex + 头部键值对长度标识结束下标
-	// headerEndIndex = headerIndex + int(headerLen)
-
-	if headerLen > 0 {
-		request.rawHeader = request.rawData[headerIndex:headerEndIndex]
-		err = decodeHeader(request.rawHeader, &request.ProtocolHeader)
+	// Oneway逻辑处理
+	if isRequestAck {
+		if isLastAck(ctx) {
+			request.Flag = CmdRequestOneway
+			log.DefaultLogger.Infof("[fix] lask ack, request type:%d", request.Flag)
+		}
+		return request, err
 	}
-	if contentLen > 0 {
-		panic("实现: 给contentIndex和contentEndIndex赋值，contentIndex报文体开始下标，contentEndIndex代表报文体结束下标")
-		// TODO: 删除panic以及以下注释，给contentIndex和contentEndIndex赋值:
-		// example 假设协议报文体紧跟在键值对字节之后:
-		// contentIndex = headerEndIndex
-		// contentEndIndex 可以用contentIndex + 报文体长度标识结束下标
-		// contentEndIndex = contentIndex + int(contentLen)
-
-		request.rawContent = request.rawData[contentIndex:contentEndIndex]
-		request.Content = buffer.NewIoBufferBytes(request.rawContent)
-	}
+	//TODO: 如果有需要，这里可以进一步解析 Header和Body
 	return request, err
 }
 
@@ -118,75 +97,61 @@ func decodeResponse(ctx context.Context, data api.IoBuffer) (cmd interface{}, er
 
 	var (
 		headerLen  uint16
-		contentLen uint16
+		contentLen int // body长度
+		frameLen   int
 	)
 
-	// 2. 获取协议key-value的长度，以及报文体长度
-	panic("实现: 给headerLen和contentLen字段赋值, headerLen代表键值对编码长度，contentLen代表报文体长度")
-	// TODO: 删除panic以及以下注释，给headerLen和contentLen字段赋值:
-	// example 如何读取协议头部字段信息:
-	// 假设从索引12:14代表协议头部key-value编码后的长度,
-	// 从索引14:16读取协议体的长度
-	// headerLen = binary.BigEndian.Uint16(bytes[12:14])
-	// contentLen = binary.BigEndian.Uint16(bytes[14:16])
+	if bytesLen == 8 {
+		// 首次报文
+		frameLen = 8
+		if _, err = strconv.Atoi(strings.TrimSpace(string(bytes[0:8]))); err != nil {
+			err = fmt.Errorf("pares total length failed,err:%v", err)
+			return
+		}
+	} else {
+		// Chunk报文
+		headerLen = 0
+		contentLen, err = strconv.Atoi(string(bytes[0:8]))
+		frameLen = ResponseHeaderLen + int(headerLen) + contentLen
+		if err != nil {
+			err = fmt.Errorf("pares total length failed,err:%v", err)
+			return
+		}
+	}
 
-	frameLen := ResponseHeaderLen + int(headerLen) + int(contentLen)
 	if bytesLen < frameLen {
+		log.DefaultLogger.Infof("[fix] continue read resp: %d", bytesLen)
 		return
 	}
+	log.DefaultLogger.Infof("[fix] receive resp:%s", string(bytes))
 	// 非常重要: 丢弃tcp连接解码后的数据，防止内核重复推送重复数据
 	data.Drain(frameLen)
 
 	response := &Response{}
-
 	response.ProtocolHeader = ProtocolHeader{
 		Flag:       getStreamType(bytes),
 		HeaderLen:  headerLen,
-		ContentLen: contentLen,
-		// TODO: 为RequestId和其他自定义字段赋值
+		ContentLen: uint16(contentLen),
 	}
 
-	panic("实现: 给Status字段赋值")
-	// TODO: 删除panic以及以下注释，给Status字段赋值:
-	// example 如何读取协议头部字段信息:
-	// 假设从索引8:12代表协议头部读取返回状态值
-	// response.Status = binary.BigEndian.Uint32(bytes[8:12])
-
 	response.Data = buffer.GetIoBuffer(frameLen)
-
-	//3. 完整报文复制到Data字段中
 	response.Data.Write(bytes[:frameLen])
 	response.rawData = response.Data.Bytes()
 
-	//5. process wrappers: Header, Content, Data
-	var (
-		headerIndex     int
-		headerEndIndex  int
-		contentIndex    int
-		contentEndIndex int
-	)
-
-	panic("实现: 给headerIndex和headerEndIndex赋值，headerIndex代表键值对开始下标，headerEndIndex代表键值对结束下标")
-	// TODO: 删除panic以及以下注释，给headerIndex和contentIndex赋值:
-	// example 假设RequestHeaderLen刚好是协议头部键值对的下标:
-	// headerIndex = RequestHeaderLen
-	// contentIndex 可以用headerIndex + 头部键值对长度标识结束下标
-	// headerEndIndex = headerIndex + int(headerLen)
-
-	if headerLen > 0 {
-		response.rawHeader = response.rawData[headerIndex:headerEndIndex]
-		err = decodeHeader(response.rawHeader, &response.ProtocolHeader)
+	// Oneway逻辑处理
+	if frameLen == 8 {
+		//首次报文
+		var totalLen int
+		if totalLen, err = strconv.Atoi(strings.TrimSpace(string(bytes[0:8]))); err == nil {
+			setContentLength(ctx, uint32(totalLen))
+		}
+	} else {
+		//Chunk报文
+		setChunkedSize(ctx, uint32(contentLen))
 	}
-	if contentLen > 0 {
-		panic("实现: 给contentIndex和contentEndIndex赋值，contentIndex报文体开始下标，contentEndIndex代表报文体结束下标")
-		// TODO: 删除panic以及以下注释，给contentIndex和contentEndIndex赋值:
-		// example 假设协议报文体紧跟在键值对字节之后:
-		// contentIndex = headerEndIndex
-		// contentEndIndex 可以用contentIndex + 报文体长度标识结束下标
-		// contentEndIndex = contentIndex + int(contentLen)
-
-		response.rawContent = response.rawData[contentIndex:contentEndIndex]
-		response.Content = buffer.NewIoBufferBytes(response.rawContent)
+	if isChunkComplete(ctx) {
+		response.Set(ExtChunkedFinish, "true")
 	}
+
 	return response, err
 }

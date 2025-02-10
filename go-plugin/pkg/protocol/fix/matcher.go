@@ -23,16 +23,12 @@ import (
 
 func Matcher(data []byte) api.MatchResult {
 	length := len(data)
-	if length == 0 {
+	if length < 4 {
 		return api.MatchAgain
 	}
 
-	panic("实现: 识别当前私有协议是否匹配成功")
-	// TODO: 删除panic以及以下注释，实现Matcher方法:
-	// example 比如可以根据协议0、1下标是否是0xbc、0xbc判断是否是可以处理的协议
-	// if length >= 2 && data[0] == 0xbc && data[1] == 0xbc {
-	// 	return api.MatchSuccess
-	// }
-
+	if string(data[0]) == ProtocolMagic {
+		return api.MatchSuccess
+	}
 	return api.MatchFailed
 }

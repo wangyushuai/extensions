@@ -35,23 +35,5 @@ func (m StatusMapping) MappingHeaderStatusCode(ctx context.Context, headers api.
 	var code uint32
 
 	code = cmd.GetStatusCode()
-
-	panic("实现: 私有协议状态码转换成标准http的状态码，用于mosn内部按照http维度统计调用信息")
-	// TODO:  删除panic以及以下注释，实现MappingHeaderStatusCode方法:
-	// example 假设私有协议状态码0代表成功，则返回http.StatusOK
-	// 假设私有协议状态码4（ResponseStatusServerThreadPoolBusy）代表线程池忙，则返回http.StatusServiceUnavailable
-	// switch code {
-	// case ResponseStatusSuccess:
-	// 	return http.StatusOK, nil
-	// case ResponseStatusServerThreadPoolBusy:
-	// 	return http.StatusServiceUnavailable, nil
-	// case ResponseStatusTimeout:
-	// 	return http.StatusGatewayTimeout, nil
-	// case ResponseStatusConnectionClosed:
-	// 	return http.StatusBadGateway, nil
-	// default:
-	// 	return http.StatusInternalServerError, nil
-	// }
-
 	return int(code), nil
 }
